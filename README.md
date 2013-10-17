@@ -20,7 +20,9 @@ Autobuild and reload Chrome Packaged App on Meteor hotcode push:
 $ cd hello
 $ packmeteor -ar
 ```
-*NOTE: Close the Chrome before running the script. Current chrome requires manual refresh of the app, goto `chrome://extensions/` and click "update"*
+*NOTE:*
+*Close the Chrome before running the script.*
+*Current chrome requires manual refresh of the app, goto [chrome://extensions/](chrome://extensions/) and click "update"*
 
 ###Usage:
 ```
@@ -42,11 +44,11 @@ $ packmeteor -help
 ```
 
 ###Build from server
-The script packages the app from the Meteor app at localhost:3000 pr. default.
+The script packages the app from the Meteor app at localhost:3000 (default)
 Use `-b http://myclient.com:80` for building the app from this location instead.
 
 ###Connection client to server
-The packaged client is mounted to the same server as the build server pr. default. But there may be cases where the client should connect to a different server.
+The packaged client is mounted to the same server as the build server (default). But there may be cases where the client should connect to a different server.
 Use `-s http://livedataserver.com:80`
 
 Kind regards Morten, aka @raix
