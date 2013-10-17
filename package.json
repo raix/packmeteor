@@ -1,0 +1,30 @@
+{
+  "name": "packmeteor",
+  "version": "0.0.1",
+  "prefereGlobal": "true",
+  "description": "Package the Meteor js client into a Chrome Packaged App",
+  "keywords": [
+    "meteor",
+    "chrome",
+    "wrapper",
+    "cli",
+    "command"
+  ],
+  "author": {
+    "name": "Morten N. O. Nørgaard Henriksen",
+    "email": "mh@gi-software.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/raix/Meteor-packaged-app.git"
+  },
+  "bin": {
+    "packmeteor": "packmeteor.js"
+  },
+  "dependencies": {
+    "commander": ">=2.0.0",
+    "colors": ">=0.6.2",
+    "progress": ">=1.1.0",
+    "ddp": ">=0.3.4"
+  }
+}
