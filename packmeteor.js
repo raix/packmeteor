@@ -39,29 +39,98 @@ program
   .version('0.0.1')
   .option('-c, --create <name>', 'Create Packaged App')
   .option('-a, --autobuild', 'Auto build on server update')
-  .option('-r, --reload', 'Reload chrome packaged app (not working due to chrome issue)')
+  .option('-r, --reload', 'Reload app')
 
   .option('-b, --build [url]', 'Client code url [http://localhost:3000]', 'http://localhost:3000')
   .option('-s, --server <url>', 'Server url, default to build url [http://localhost:3000]')
 
-  .option('-t, --target [packaged, cordova]', 'Target platform [packaged]', 'packaged')
+  .option('-t, --target [packaged, cordova]', 'Target platform, default is autodetect')
+  .option('-e, --emulate [platform]', 'Reload emulator [android]')
+  .option('-d, --device [platform]', 'Reload device [android]')
   .option('-m, --migration', 'Enable Meteor hotcode push')
 
   .parse(process.argv);
 
-if (program.reload) {
-  console.log('Reloading app via Chrome');
+
+// If user only uses the -e or --emulate the assume android platform
+if (program.emulate === true) {
+  program.emulate = 'android';
 }
 
+if (program.device === true) {
+  program.device = 'android';
+}
+
+// Check that we are in a packaged app directory
+var inPackagedAppFolder = fs.existsSync('manifest.json');
+var inCordovaAppFolder = fs.existsSync('config.xml');
+
+if (!program.target) {
+  // If target not set then detect packaged or cordova
+  if (inPackagedAppFolder) {
+    program.target = 'packaged';
+  }
+
+  if (inCordovaAppFolder) {
+    program.target = 'cordova';
+  }
+}
+
+// This function returns array of IPv4 interfaces
+var getIps = function() {
+  // OS for ip
+  var os = require('os');
+  // Get interfaces
+  var netInterfaces = os.networkInterfaces();
+  // Result
+  var result = [];
+  for (var id in netInterfaces) {
+    var netFace = netInterfaces[id];
+    for (var i = 0; i < netFace.length; i++) {
+      var ip = netFace[i];
+      if (ip.internal === false && ip.family === 'IPv4') {
+        result.push(ip);
+      }
+    }
+  }
+  return result;
+};
+
+// Init urls
 var urls = {
   build: url.parse(program.build),
   server: url.parse(program.server || program.build)
 };
 
+// If user havent specified server adr when on cordova - we'll help the user
+if (!program.server) {
+  // Get list of ip's
+  var ips = getIps();
+  // If we got any results
+  if (ips.length) {
+    // Create new adr
+    var newAdr = urls.server.protocol + '//' + ips[0].address + ':' + urls.server.port;
+    // Parse the server urls
+    urls.server = url.parse(newAdr);
+  }
+}
+
 // We have an array/flat object of files in the folder - this is to keep track
 // of files to remove - since we are syncronizing with a source
 var folderObject = {};
 var folderObjectUpdate = function(path) {
+  var dontSync = {
+    'manifest.json': true,
+    'config.xml': true,
+    'index.js': true,
+    'index.html': true
+  };
+  
+  if (program.target === 'cordova') {
+    // We dont touch the res/* folder could hold icons for the cordova build?
+    dontSync['res'] = true;
+  }
+
   var folder = fs.readdirSync(path || '.');
   if (typeof path === 'undefined') {
     // Reset array
@@ -72,15 +141,58 @@ var folderObjectUpdate = function(path) {
     var filename = folder[i];
     var pathname = ((path)? path + '/' : '') + filename;
     try {
-      folderObjectUpdate(pathname);
+      if (!dontSync[pathname]) {
+        folderObjectUpdate(pathname);
+        folderObject[pathname] = 'path';
+      }
     } catch(err) {
-      folderObject[pathname] = (pathname == 'manifest.json')?true:false;
+      folderObject[pathname] = true;
     }
   }  
 };
 
+var cleanFolderInit = function(complete) {
+  // Clear container
+  folderObject = {};
+  // Scan the folder
+  folderObjectUpdate();
+  // Next
+  complete();
+};
+
+var cleanFolder = function(complete) {
+  // Clean folder after all new files are syncronized,
+  for (var file in folderObject) {
+    var value = folderObject[file];
+    if (value === true || value === 'path') {
+      if (value === 'path') {
+        try {
+          fs.rmdirSync(file);
+        } catch(err) {
+          // The folder is not empty, thats ok
+        }
+      } else {
+        try {
+          fs.unlinkSync(file);
+        } catch(err) {
+          // This would be an error
+          var error = 'Could not remove: ' + file;
+          console.log(error.red);
+        }
+      }
+    }
+  }
+  complete();
+};
+
+var updatedFolder = function(path) {
+  // Set a "dont remove" flag
+  var id = (path.substr(0,1) === '/')?path.substr(1) : path;
+  folderObject[id] = false;
+};
 
 var saveFileFromServer = function(filename, url) {
+
   var filepath = path.join(currentPath, filename);
   var dirname = path.dirname(filepath);
   if (url !== '/') {
@@ -96,6 +208,10 @@ var saveFileFromServer = function(filename, url) {
   // Add task to queue
   queue.add(function(complete) {
     var fd;
+    
+    // Dont clean this filename
+    updatedFolder(filename);
+    
     // Make sure the path exists
     if (!fs.existsSync(dirname)) {
       fs.mkdirSync(dirname);
@@ -201,10 +317,26 @@ var correctIndexHtml = function(complete) {
     // a seperate file called index.js and add the loader for it
     // We only intercept the first script tag
     text = text.replace('</script>', '<!-- CI -->');
-    var listA = text.split('<script type="text/javascript">');
+    var listA = text.split('\n<script type="text/javascript">');
     var listB = listA[1].split('<!-- CI -->');
     //console.log(listB);
-    text = listA[0] + '  <script type="text/javascript" src="index.js"></script>' + listB[1];
+    text = listA[0];
+    // If building for cordova then add the cordova script
+    if (program.target === 'cordova') {
+      text = text.replace('<head>\n',
+        '<head>\n' +
+        '  <meta charset="utf-8" />\n' +
+        '  <meta name="format-detection" content="telephone=no" />\n' +
+        '  <meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, height=device-height, target-densitydpi=device-dpi" />\n\n'
+      );
+
+
+      // TODO: Check if we should add more files like plugins
+      text += '  <script type="text/javascript" src="cordova.js"></script>\n';
+    }
+    // Add the rest of html
+    text += '  <script type="text/javascript" src="index.js"></script>';
+    text += listB[1];
     // Code that should go into index.js
     var code = correctIndexJs(listB[0]);
 
@@ -280,25 +412,46 @@ if (program.create) {
   console.log('Connect client app to : ' + urls.server.href);
   console.log('-------------------------------------------');
 
-  // Check that we are in a packaged app directory
-  var inPackagedAppFolder = fs.existsSync('manifest.json');
+  if (inPackagedAppFolder || inCordovaAppFolder) {
 
-  if (inPackagedAppFolder) {
+    if (program.reload) {
+      if (program.target === 'packaged') {
+        console.log('Reloading app via `Chrome --load-and-launch-app=' + currentPath + '`');        
+      }
+      if (program.target === 'cordova') {
+        console.log('Rebuilding app via `cordova build`');        
+      }
+    }
+
+    if (program.emulate) {
+      console.log('Restart emulator via `cordova emulate ' + program.emulate + '`');
+    }
 
     var buildPackagedApp = function() {
       currentBuild++;
-      // Load manifest.json file
-      var manifestString = fs.readFileSync('manifest.json', 'utf8');
-      var manifest = {};
+      
+      queue.reset();
 
-      try {
-        manifest = JSON.parse(manifestString);  
-      } catch(err) {
-        throw new Error('manifest.json invalid format, Error: ' + (err.trace || err.message));
+      queue.add(cleanFolderInit);
+
+      var manifest = {
+        "manifest_version": 1
+      };
+      // Load manifest.json file
+      if (inPackagedAppFolder) {
+        var manifestString = fs.readFileSync('manifest.json', 'utf8');
+
+        try {
+          manifest = JSON.parse(manifestString);  
+        } catch(err) {
+          throw new Error('manifest.json invalid format, Error: ' + (err.trace || err.message));
+        }
       }
 
       // Load all files from /packmeteor.manifest - serves a list of clientfiles
       // to save into the packaged app - or could we use the appcache manifest?
+      // TODO: if we make a Meteor package we should have a better interface
+      // than using the appcache?
       var options = {
         hostname: urls.build.hostname,
         port: urls.build.port,
@@ -338,6 +491,7 @@ if (program.create) {
                 // This line is cache line
                 var filename = line.split('?')[0];
                 filename = (filename == '/')?'index.html':filename;
+                // Adds task to queue...
                 saveFileFromServer(filename, line);
               } else
               if (where == 'fallback') {
@@ -366,13 +520,28 @@ if (program.create) {
 
             // If user wants to reload chrome app
             if (program.reload) {
-              //queue.add(killChrome);
-              queue.add(reloadChromeApps);
+              if (program.target === 'cordova') {
+                // Cordova
+                queue.add(prepareCordovaApps);
+                queue.add(compileCordovaApps);
+              } else {
+                // Default target is packaged
+                //queue.add(killChrome);
+                queue.add(reloadChromeApps);
+              }
             }
 
-            queue.add(function(complete) {
-              //console.log('Finished..');
-            });
+            if (program.target === 'cordova' && program.emulate) {
+              queue.add(emulateCordovaApps);
+            }
+
+            if (program.target === 'cordova' && program.device) {
+              queue.add(runCordovaApps);
+            }
+
+            // Clean the app folder after rebuilding?
+            queue.add(cleanFolder);
+
             // Start the build
             queue.run();
             
@@ -386,49 +555,56 @@ if (program.create) {
         console.log('problem with request: ' + e.message);
       });
 
-      req.end();      
-
-      // Remove all files in folder
-
-      // Load all the files from server
-
+      req.end();
 
     };
 
-    var killChrome = function(complete) {
+    var execute = function(command, name, complete) {
       var exec = require('child_process').exec;
       var completeFunc = (typeof complete === 'function')?complete:console.log;
 
-      exec('killall Google\ Chrome', function(err) {
-        if (err) {
-          completeFunc('Could not kill all Chrome');
+      // console.log('Execute: ' + name + ' : ' + command);
+      exec(command, function(err) {
+        if(err){ //process error
+          completeFunc('Could not ' + name);
+          //completeFunc('Could not ' + name + ', Error: ' + (err.trace || err.message));
         } else {
-          //console.log('Kill all chrome');
           completeFunc();
         }
       });
+    };    
+
+    var killChrome = function(complete) {
+      var command = 'killall Google\ Chrome';
+      execute(command, 'kill all Chrome', complete);
     };
 
     // Start or restart the app
     var reloadChromeApps = function(complete) {
-      var exec = require('child_process').exec;
-      var completeFunc = (typeof complete === 'function')?complete:console.log;
-
       var command = chrome + '--args --load-and-launch-app=' + currentPath;
+      execute(command, 'start Chrome packaged app', complete);
+    };
 
-      //console.log('Reload chrome app: ' + command);
+    var prepareCordovaApps = function(complete) {
+      var command = 'cordova prepare';
+      execute(command, 'prepare cordova app', complete);
+    };
 
-      exec(command, function(err) {
-        if(err){ //process error
-          if (currentBuild === 1) {
-            completeFunc('Could not start Chrome packaged app, Error: ' + (err.trace || err.message));
-          } else {
-            completeFunc('Could not reload Chrome packaged app, Error: ' + (err.trace || err.message));
-          }
-        } else {
-          completeFunc();
-        }
-      });
+    var compileCordovaApps = function(complete) {
+      var command = 'cordova compile';
+      execute(command, 'compile cordova app', complete);
+    };
+
+    var emulateCordovaApps = function(complete) {
+      var command = 'cordova emulate ' + program.emulate;
+      var name = 'run emulator for ' + program.emulate + ' cordova app';
+      execute(command, name, complete);
+    };
+
+    var runCordovaApps = function(complete) {
+      var command = 'cordova run ' + program.device;
+      var name = 'run on ' + program.device + ' cordova app';
+      execute(command, name, complete);
     };
 
 
@@ -463,26 +639,33 @@ if (program.create) {
     // If autobuild added
     if (program.autobuild) {
       // If source is server then listen to the servers ddp
-      var buildbar = new ProgressBar('Auto building packaged Meteor app (x:current)', {
-        total: 999999,
+      var buildbar = new ProgressBar('Auto building ' + program.target + ' Meteor app (:current%)', {
+        total: 120,
         complete: '',
         incomplete: ''
       });
 
-      runForever(urls.build.hostname, urls.build.port, function() {
+      queue.progress = function(count, total) {
+        var progress = total - count;
+        // The queue will update this
+        var pct = (total > 0) ? Math.round(progress / total * 100) : 0;
         // Update the gui
-        buildbar.tick(1);
+        buildbar.curr = pct;
+        buildbar.render();
+      };
+
+      runForever(urls.build.hostname, urls.build.port, function() {
         // Run builder
         buildPackagedApp();
       });
     } else {
-      console.log('Start building packaged Meteor app');
+      console.log('Start building ' + program.target + ' Meteor app');
       // Run builder
       buildPackagedApp();      
     }
   } else {
     // No packaged app found
-    console.log('Must be in a packaged app folder');
+    console.log('Must be in a ' + program.target + ' app folder');
   }
 }
 
