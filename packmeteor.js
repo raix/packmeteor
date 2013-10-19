@@ -548,10 +548,14 @@ if (program.create) {
               complete();
             });
 
-            // If user wants to reload chrome app
-            if (program.reload) {
+            // Clean the app folder after rebuilding?
+            queue.add(cleanFolder);
+
+            // If user wants to reload chrome app or at first run
+            if (program.reload || currentBuild === 1) {
               if (program.target === 'cordova') {
                 // Cordova
+                queue.add(testCordovaPlatform);
                 queue.add(prepareCordovaApps);
                 queue.add(compileCordovaApps);
               } else {
@@ -568,9 +572,6 @@ if (program.create) {
             if (program.target === 'cordova' && program.device) {
               queue.add(runCordovaApps);
             }
-
-            // Clean the app folder after rebuilding?
-            queue.add(cleanFolder);
 
             // Start the build
             queue.run();
@@ -589,6 +590,7 @@ if (program.create) {
 
     };
 
+    // General function for executing shell commands
     var execute = function(command, name, complete) {
       var exec = require('child_process').exec;
       var completeFunc = (typeof complete === 'function')?complete:console.log;
@@ -603,6 +605,69 @@ if (program.create) {
         }
       });
     };    
+
+    // Parse the cordova platforms output into a object
+    var parseCordovaPlatforms = function(text) {
+      var list = text.split('\n');
+      var platforms = {};
+      for (var i = 0; i < list.length; i++) {
+        var split = list[i].split(': ');
+        if (split[0]) {
+          platforms[split[0]] = split[1]; //.split(', ');
+        }
+      }
+      return platforms;      
+    };
+
+    // Test that platforms are added
+    var testCordovaPlatform = function(complete) {
+      var exec = require('child_process').exec;
+      var completeFunc = (typeof complete === 'function')?complete:console.log;
+
+      // console.log('Execute: ' + name + ' : ' + command);
+      exec('cordova platforms', function(err, stin) {
+        if(err){ //process error
+          completeFunc('Could not use cordova, is it installed?');
+          //completeFunc('Could not ' + name + ', Error: ' + (err.trace || err.message));
+        } else {
+          platforms = parseCordovaPlatforms(stin);
+
+          var target = program.emulate || program.device;
+          var installed = platforms['Installed platforms'];
+          var available = platforms['Available platforms'];
+
+          var isInstalled = (installed && installed.indexOf(target) >= 0);
+          var isAvailable = (available && available.indexOf(target) >= 0);
+
+          if (!target) {
+            if (installed) {
+              // Ok, no target but have a platform installed
+              // we are not emulating or running
+              completeFunc(); 
+              return;             
+            } else {
+              // No platforms are installed - we install default android
+              target = 'android';
+            }
+          }
+
+          if (isInstalled) {
+            // All is good
+            completeFunc();
+          } else {
+            if (!isInstalled && isAvailable) {
+              var message = 'Platform missing, trying to add ' + target;
+              console.log(message.green);
+              // Ok we can help trying fix this..
+              execute('cordova platform add ' + target, 'add platform ' + target, complete);
+            } else {
+              // All is bad - the platform is not available
+              completeFunc('Could not use platform ' + target);
+            }
+          }
+        }
+      });      
+    };
 
     var killChrome = function(complete) {
       var command = 'killall Google\ Chrome';
