@@ -318,8 +318,21 @@ var correctIndexHtml = function(complete) {
     // a seperate file called index.js and add the loader for it
     // We only intercept the first script tag
     text = text.replace('</script>', '<!-- CI -->');
+    // Adapt to latest meteor ' instead of "
+    text = text.replace("'text/javascript'", '"text/javascript"');
+    // Divide the source
     var listA = text.split('\n<script type="text/javascript">');
+    // Check for parsing errors
+    if (listA.length !== 2) {
+      console.log(text);
+      throw new Error('Not compatible with the current Meteor version');
+    }
+    // Divide the source again
     var listB = listA[1].split('<!-- CI -->');
+    // Check for parsing errors
+    if (listB.length !== 2) {
+      throw new Error('Not compatible with the current Meteor version');
+    }
     //console.log(listB);
     text = listA[0];
     // If building for cordova then add the cordova script
