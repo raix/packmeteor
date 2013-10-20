@@ -122,10 +122,29 @@ if (!program.server) {
   }
 }
 
+// Check folder and create if not found
+var ensureFolderExists = function(fullpath) {
+  var list = fullpath.split(path.sep);
+  var pathname = '';
+  while (list.length) {
+    if (pathname === '') {
+      pathname = path.join(path.sep, list.shift());
+    } else {
+      pathname = path.join(pathname, path.sep, list.shift());
+    }
+    if (pathname !== '') {
+      // If path not found then create
+      if (!fs.existsSync(pathname)) {
+        fs.mkdirSync(pathname);
+      }
+    }
+  }
+};
+
 // We have an array/flat object of files in the folder - this is to keep track
 // of files to remove - since we are syncronizing with a source
 var folderObject = {};
-var folderObjectUpdate = function(path) {
+var folderObjectUpdate = function(fullpath) {
   var dontSync = {
     'manifest.json': true,
     'config.xml': true,
@@ -145,15 +164,15 @@ var folderObjectUpdate = function(path) {
     dontSync[reloaderFile] = true;
   }
 
-  var folder = fs.readdirSync(path || '.');
-  if (typeof path === 'undefined') {
+  var folder = fs.readdirSync(fullpath || '.');
+  if (typeof fullpath === 'undefined') {
     // Reset array
     folderObject = {};
   }
 
   for (var i = 0; i < folder.length; i++) {
     var filename = folder[i];
-    var pathname = ((path)? path + '/' : '') + filename;
+    var pathname = ((fullpath)? fullpath + '/' : '') + filename;
     try {
       if (!dontSync[pathname]) {
         folderObjectUpdate(pathname);
@@ -227,9 +246,8 @@ var saveFileFromServer = function(filename, url) {
     updatedFolder(filename);
     
     // Make sure the path exists
-    if (!fs.existsSync(dirname)) {
-      fs.mkdirSync(dirname);
-    }
+    ensureFolderExists(dirname);
+
     // Start downloading a file
     http.get(urlpath, function(response) {
       if (response.statusCode !== 200) {
