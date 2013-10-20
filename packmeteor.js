@@ -34,6 +34,8 @@ var currentBuild = 0;
 var queue = new Queue();
 // List of replacements for correcting index.html
 var fileList = [];
+// Name of reloader script
+var reloaderFile = 'reloader.js';
 
 program
   .version('0.0.1')
@@ -74,6 +76,11 @@ if (!program.target) {
   if (inCordovaAppFolder) {
     program.target = 'cordova';
   }
+}
+
+// If chrome packaged app and reload is on then force Meteor migration...
+if (program.target === 'packaged' && program.reload && !program.migration) {
+  program.migration = true;
 }
 
 // This function returns array of IPv4 interfaces
@@ -130,6 +137,12 @@ var folderObjectUpdate = function(path) {
   if (program.target === 'cordova') {
     // We dont touch the res/* folder could hold icons for the cordova build?
     dontSync['res'] = true;
+  }
+
+  // If we are using the reload then and on chrome packaged apps then
+  if (program.target === 'packaged' && program.reload) {
+    // Dont sync the reloader file
+    dontSync[reloaderFile] = true;
   }
 
   var folder = fs.readdirSync(path || '.');
@@ -308,12 +321,39 @@ var correctIndexJs = function(code) {
   return result;
 };
 
+var chromeAppReloader = function() {
+  var addReloader = program.target === 'packaged' && program.reload;
+  if (addReloader) {
+    var code =
+    "if (Package && Package.reload && Package.reload.Reload) {\n" +
+    "  Package.reload.Reload._onMigrate('packmeteor', function(migrate) {\n" +
+    "    if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {\n" +
+    "      setTimeout(function() {\n" +
+    "        chrome.runtime.reload();\n" +
+    "      }, 2000);\n" +
+    "    } else {\n" +
+    "      migrate();\n" +
+    "    }\n" +
+    "  });\n" +
+    "}\n";
+
+    fs.writeFileSync(reloaderFile, code, 'utf8');
+    // Return the text to add
+    return '  <script type="text/javascript" src="' + reloaderFile + '"></script>\n\n';
+  }
+
+  return '';
+};
+
 var correctIndexHtml = function(complete) {
   var indexName = 'index.html';
   if (fs.existsSync(indexName)) {
     // Load index.html
     var text = fs.readFileSync(indexName, 'utf8');
-
+    // Get the chrome reloader script
+    var theChromeAppReloaderScript = chromeAppReloader();
+    // Add the script to the file
+    text = text.replace('<title', theChromeAppReloaderScript + '<title');
     // Chrome packaged apps doesnt allow inline scripts.. We extract it into
     // a seperate file called index.js and add the loader for it
     // We only intercept the first script tag
@@ -446,7 +486,7 @@ if (program.create) {
 
     if (program.reload) {
       if (program.target === 'packaged') {
-        console.log('Reloading app via `Chrome --load-and-launch-app=' + currentPath + '`');        
+        console.log('Starting app via `Chrome` ' + currentPath + '');        
       }
       if (program.target === 'cordova') {
         console.log('Rebuilding app via `cordova build`');        
@@ -561,7 +601,10 @@ if (program.create) {
               } else {
                 // Default target is packaged
                 //queue.add(killChrome);
-                queue.add(reloadChromeApps);
+                // We are reloading but only do this the first time
+                if (currentBuild === 1) {
+                  queue.add(reloadChromeApps);
+                }
               }
             }
 
@@ -678,7 +721,7 @@ if (program.create) {
     var reloadChromeApps = function(complete) {
       //var appId = 'appTestID';
       //var command = chrome + '--args --app-id=' + appId;
-      var command = chrome + '--args --load-and-launch-app=' + currentPath;
+      var command = chrome + '--args --load-and-launch-app=' + currentPath;// + ' --no-startup-window';
       execute(command, 'start Chrome packaged app', complete);
     };
 
