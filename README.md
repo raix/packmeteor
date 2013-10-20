@@ -7,8 +7,6 @@ This is a simple CLI for packaging the Meteor client into a folder. Its useful w
 
 [Quick demo of packmeteor](http://www.youtube.com/watch?v=7UFIqetFC-k&feature=youtu.be)
 
-![]([Pack Meteor](http://www.youtube.com/watch?v=7UFIqetFC-k&feature=youtu.be))
-
 ###Installation:
 ```
 $ npm install packmeteor
