@@ -3,6 +3,11 @@ Pack Meteor
 
 This is a simple CLI for packaging the Meteor client into a folder. Its useful when creating `Chrome Packaged Apps` but can also be used with `Cordova`.
 
+[![Screenshot](http://img.youtube.com/vi/7UFIqetFC-k&feature=youtu.be/0.jpg)](http://www.youtube.com/watch?v=7UFIqetFC-k&feature=youtu.be)
+[Quick demo of packmeteor](http://www.youtube.com/watch?v=7UFIqetFC-k&feature=youtu.be)
+
+![]([Pack Meteor](http://www.youtube.com/watch?v=7UFIqetFC-k&feature=youtu.be))
+
 ###Installation:
 ```
 $ npm install packmeteor
