@@ -258,7 +258,13 @@ var saveFileFromServer = function(filename, url) {
         var contentLength = +(response.headers['content-length'] || -1);
         var loadedLength = 0;
 
-        fd = fs.openSync(filepath, 'w');
+        // fd = fs.openSync(filepath, 'w');
+        try {
+          fs.unlinkSync(filepath);
+        } catch (e) {}
+        
+        fd = fs.openSync(filepath, 'a');
+        
         response.on("data", function(chunk) {
           loadedLength += chunk.length;   
           fs.write(fd, chunk,  0, chunk.length, null, function(err, written, buffer) {
