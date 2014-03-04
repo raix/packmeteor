@@ -8,7 +8,9 @@
     "chrome",
     "wrapper",
     "cli",
-    "command"
+    "command",
+    "cordova",
+    "phonegap"
   ],
   "author": {
     "name": "Morten N. O. Nørgaard Henriksen",
@@ -16,7 +18,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/raix/packmeteor.git"
+    "url": "https://github.com/SpaceCapsule/packmeteor.git"
   },
   "bin": {
     "packmeteor": "packmeteor.js"
