@@ -20,12 +20,14 @@ var fs = require('fs');
 var url = require('url');
 // Path
 var path = require('path');
+// File Extended
+var fsx = require('./fsx');
 // Chrome browser - only tested on mac
 var chrome = 'open -a Google\\ Chrome ';
-// HTTP
-var http = require('http');
 // Queue
 var Queue = require('./queue');
+// Read the filemanifest from the source server
+var filemanifest = require('./filemanifest');
 // Get current path
 var currentPath = path.resolve();
 // currentBuild
@@ -35,15 +37,19 @@ var queue = new Queue();
 // List of replacements for correcting index.html
 var fileList = [];
 // Name of reloader script
-var reloaderFile = 'reloader.js';
+var reloaderFile = 'chrome.meteor.reloader.js';
+// Path of this script - Used by creating app from templates
+var scriptPath = path.dirname(require.main.filename);
+// Templates folder
+var templatePath = path.join(scriptPath, path.sep, 'templates');
 
 program
-  .version('0.0.1')
+  .version('0.1.0')
   .option('-c, --create <name>', 'Create Packaged App')
   .option('-a, --autobuild', 'Auto build on server update')
   .option('-r, --reload', 'Reload app')
 
-  .option('-b, --build [url]', 'Client code url [http://localhost:3000]', 'http://localhost:3000')
+  .option('-u, --url [url]', 'Client code url [http://localhost:3000]', 'http://localhost:3000')
   .option('-s, --server <url>', 'Server url, default to build url [http://localhost:3000]')
 
   .option('-t, --target [packaged, cordova]', 'Target platform, default is autodetect')
@@ -52,7 +58,6 @@ program
   .option('-m, --migration', 'Enable Meteor hotcode push')
 
   .parse(process.argv);
-
 
 // If user only uses the -e or --emulate the assume android platform
 if (program.emulate === true) {
@@ -66,6 +71,16 @@ if (program.device === true) {
 // Check that we are in a packaged app directory
 var inPackagedAppFolder = fs.existsSync('manifest.json');
 var inCordovaAppFolder = fs.existsSync('config.xml');
+var inNewCordovaOutSideWWW = fs.existsSync('www');
+
+if (inNewCordovaOutSideWWW) {
+  console.log('Cordova found - but you have to be inside the www folder');
+  process.exit();
+}
+
+// We could be in the new cordova structure so better test...
+if (!inCordovaAppFolder)
+  inCordovaAppFolder = fs.existsSync(path.resolve('../config.xml'));
 
 if (!program.target) {
   // If target not set then detect packaged or cordova
@@ -105,8 +120,8 @@ var getIps = function() {
 
 // Init urls
 var urls = {
-  build: url.parse(program.build),
-  server: url.parse(program.server || program.build)
+  build: url.parse(program.url),
+  server: url.parse(program.server || program.url)
 };
 
 // If user havent specified server adr when on cordova - we'll help the user
@@ -122,107 +137,7 @@ if (!program.server) {
   }
 }
 
-// Check folder and create if not found
-var ensureFolderExists = function(fullpath) {
-  var list = fullpath.split(path.sep);
-  var pathname = '';
-  while (list.length) {
-    if (pathname === '') {
-      pathname = path.join(path.sep, list.shift());
-    } else {
-      pathname = path.join(pathname, path.sep, list.shift());
-    }
-    if (pathname !== '') {
-      // If path not found then create
-      if (!fs.existsSync(pathname)) {
-        fs.mkdirSync(pathname);
-      }
-    }
-  }
-};
 
-// We have an array/flat object of files in the folder - this is to keep track
-// of files to remove - since we are syncronizing with a source
-var folderObject = {};
-var folderObjectUpdate = function(fullpath) {
-  var dontSync = {
-    'manifest.json': true,
-    'config.xml': true,
-    'index.js': true,
-    'index.html': true,
-    'main.js': true
-  };
-  
-  if (program.target === 'cordova') {
-    // We dont touch the res/* folder could hold icons for the cordova build?
-    dontSync['res'] = true;
-  }
-
-  // If we are using the reload then and on chrome packaged apps then
-  if (program.target === 'packaged' && program.reload) {
-    // Dont sync the reloader file
-    dontSync[reloaderFile] = true;
-  }
-
-  var folder = fs.readdirSync(fullpath || '.');
-  if (typeof fullpath === 'undefined') {
-    // Reset array
-    folderObject = {};
-  }
-
-  for (var i = 0; i < folder.length; i++) {
-    var filename = folder[i];
-    var pathname = ((fullpath)? fullpath + '/' : '') + filename;
-    try {
-      if (!dontSync[pathname]) {
-        folderObjectUpdate(pathname);
-        folderObject[pathname] = 'path';
-      }
-    } catch(err) {
-      folderObject[pathname] = true;
-    }
-  }  
-};
-
-var cleanFolderInit = function(complete) {
-  // Clear container
-  folderObject = {};
-  // Scan the folder
-  folderObjectUpdate();
-  // Next
-  complete();
-};
-
-var cleanFolder = function(complete) {
-  // Clean folder after all new files are syncronized,
-  for (var file in folderObject) {
-    var value = folderObject[file];
-    if (value === true || value === 'path') {
-      if (value === 'path') {
-        try {
-          fs.rmdirSync(file);
-        } catch(err) {
-          // The folder is not empty, thats ok
-        }
-      } else {
-        try {
-          fs.unlinkSync(file);
-        } catch(err) {
-          // This would be an error
-          var error = 'Could not remove: ' + file;
-          console.log(error.red);
-        }
-      }
-    }
-  }
-  complete();
-};
-
-var updatedFolder = function(path) {
-  // Set a "dont remove" flag
-  var id = (path.substr(0,1) === '/')?path.substr(1) : path;
-  folderObject[id] = false;
-};
 
 var saveFileFromServer = function(filename, url) {
 
@@ -240,53 +155,15 @@ var saveFileFromServer = function(filename, url) {
 
   // Add task to queue
   queue.add(function(complete) {
-    var fd;
     
     // Dont clean this filename
-    updatedFolder(filename);
+    fsx.updatedFolder(filename);
     
     // Make sure the path exists
-    ensureFolderExists(dirname);
+    fsx.ensureFolderExists(dirname);
 
-    // Start downloading a file
-    http.get(urlpath, function(response) {
-      if (response.statusCode !== 200) {
-        if (response) { 
-          complete('Error while downloading: ' + urlpath + ' Code: ' + response.statusCode);
-        }
-      } else {
-        var contentLength = +(response.headers['content-length'] || -1);
-        var loadedLength = 0;
-
-        fd = fs.openSync(filepath, 'w');
-        response.on("data", function(chunk) {
-          loadedLength += chunk.length;   
-          fs.write(fd, chunk,  0, chunk.length, null, function(err, written, buffer) {
-            if(err) {
-              complete('Error while downloading: ' + urlpath + ', Error: ' + err.message);
-            } else {
-              // TODO: Show file download progress?
-              if (contentLength == loadedLength) {
-                // Done
-              }
-            }
-          }); 
-         });
-        
-        response.on("end", function() {
-          // Check if fd exists?
-          setTimeout(function() {
-            if (contentLength != loadedLength && contentLength > -1) {
-              console.log('File not fully loaded: ' + url + ' ' + filename);
-            }
-            fs.closeSync(fd);
-          }, 300);
-          complete();
-        });
-      }
-    }).on('error', function(e) {
-      complete('Error while downloading: ' + urlpath);
-    });
+    // Save the remote file on to the filesystem
+    fsx.saveRemoteFile(filepath, urlpath, complete);
 
   });
 };
@@ -319,13 +196,13 @@ var correctIndexJs = function(code) {
 
   // We have to add this workaround - CPA dont support the 'unload' event
   // and we dont bother rewriting sockJS
-  var socketJSWorkaround =
-    "window.orgAddEventListener = window.addEventListener;\n" +
+  var socketJSWorkaround = fs.readFileSync(path.join(templatePath, 'chrome-packaged-apps.js'), 'utf8');
+    /*"window.orgAddEventListener = window.addEventListener;\n" +
     "window.addEventListener = function(event, listener, bool) {\n" +
     " if (event !== 'unload') {\n" +
     "  window.orgAddEventListener(event, listener, bool);\n" +
     " }\n" +
-    "};\n";
+    "};\n";*/
 
   // Rig the result
   result = runtimeConfig;
@@ -340,9 +217,9 @@ var correctIndexJs = function(code) {
 };
 
 var chromeAppReloader = function() {
-  var addReloader = program.target === 'packaged' && program.reload;
+  var addReloader = program.target === 'packaged';// && program.reload;
   if (addReloader) {
-    var code =
+   /* var code =
     "if (Package && Package.reload && Package.reload.Reload) {\n" +
     "  Package.reload.Reload._onMigrate('packmeteor', function(migrate) {\n" +
     "    if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.reload === 'function') {\n" +
@@ -355,7 +232,8 @@ var chromeAppReloader = function() {
     "  });\n" +
     "}\n";
 
-    fs.writeFileSync(reloaderFile, code, 'utf8');
+    fs.writeFileSync(reloaderFile, code, 'utf8');*/
+    fsx.copyFile(path.join(templatePath, path.sep, reloaderFile), reloaderFile);
     // Return the text to add
     return '  <script type="text/javascript" src="' + reloaderFile + '"></script>\n\n';
   }
@@ -371,7 +249,7 @@ var correctIndexHtml = function(complete) {
     // Get the chrome reloader script
     var theChromeAppReloaderScript = chromeAppReloader();
     // Add the script to the file
-    text = text.replace('<title', theChromeAppReloaderScript + '<title');
+    text = text.replace('</body', theChromeAppReloaderScript + '</body');
     // Chrome packaged apps doesnt allow inline scripts.. We extract it into
     // a seperate file called index.js and add the loader for it
     // We only intercept the first script tag
@@ -470,7 +348,8 @@ if (program.create) {
         // Write manifest file
         fs.writeFileSync(program.create + '/manifest.json', JSON.stringify(manifest, null, '\t'), 'utf8');
         // Write the main.js file
-        var mainFile = "// Autogenerated file - packmeteor\n" +
+        var mainFile = fs.readFileSync(path.join(templatePath, 'chrome.main.js'));
+        /*"// Autogenerated file - packmeteor\n" +
         "chrome.app.runtime.onLaunched.addListener(function() {\n" +
         "  chrome.app.window.create('index.html', {\n" +
         //"          id: 'appTestID',\n" +
@@ -478,7 +357,7 @@ if (program.create) {
         "      width: 500, height: 300\n" +
         "    }\n" +
         "  });\n" +
-        "});\n";
+        "});\n";*/
         // Write the main.js file
         fs.writeFileSync(program.create + '/main.js', mainFile, 'utf8');
         // Display some helpful guide
@@ -515,12 +394,24 @@ if (program.create) {
       console.log('Restart emulator via `cordova emulate ' + program.emulate + '`');
     }
 
+
+    if (program.target === 'cordova') {
+      // We dont touch the res/* folder could hold icons for the cordova build?
+      fsx.addDontSync('res');
+    }
+
+    // If we are using the reload then and on chrome packaged apps then
+    if (program.target === 'packaged' && program.reload) {
+      // Dont sync the reloader file
+      fsx.addDontSync(reloaderFile);
+    }
+
     var buildPackagedApp = function() {
       currentBuild++;
       
       queue.reset();
 
-      queue.add(cleanFolderInit);
+      queue.add(fsx.cleanFolderInit);
 
       var manifest = {
         "manifest_version": 1
@@ -540,114 +431,62 @@ if (program.create) {
       // to save into the packaged app - or could we use the appcache manifest?
       // TODO: if we make a Meteor package we should have a better interface
       // than using the appcache?
-      var options = {
-        hostname: urls.build.hostname,
-        port: urls.build.port,
-        path: '/app.manifest',
-        headers: {'user-agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.60 Safari/537.17'},
-        method: 'GET'
-      };
 
-      var req = http.request(options, function(res) {
-        var body = '';
+      filemanifest(urls.build.hostname, urls.build.port, function(filelist) {
 
-        // console.log('STATUS: ' + res.statusCode);
-        // console.log('HEADERS: ' + JSON.stringify(res.headers));
-        // res.headers.content-length
-        res.setEncoding('utf8');
-        res.on('data', function (chunk) {
-          body += chunk;
+        for (var i = 0; i < filelist.length; i++) {
+          // Adds task to queue...
+          var fileItem = filelist[i];
+          saveFileFromServer(fileItem.name, fileItem.url);
+        }
+
+        // Correct the file names in the index.html
+        queue.add(correctIndexHtml);
+
+        // Save the manifest file
+        queue.add(function(complete) {
+          //console.log('write manifest');
+          // Increase version nr in configuration
+          manifest.manifest_version++;
+          //manifest.version++;
+          // Save new manifest
+          manifestString = JSON.stringify(manifest, null, '\t');
+          fs.writeFileSync('manifest.json', manifestString, 'utf8');
+          complete();
         });
-        res.on('end', function () {
-          // Make sure we got the app.manifest
-          if (body.length) {
 
-            var lines = body.split('\n');
-            // The spec defaults to cache
-            var where = 'cache';
-            for (var i = 0; i < lines.length; i++) {
-              var line = lines[i];
-              // Remove comment
-              var line = line.split('#')[0];
-              // Parse lines
-              if (line == '' || line == 'CACHE MANIFEST') {} else
-              if (line == 'CACHE:') { where = 'cache'; } else
-              if (line == 'FALLBACK:') { where = 'fallback'; } else
-              if (line == 'NETWORK:') { where = 'network'; } else
-              if (line == 'SETTINGS:') { where = 'settings'; } else
-              if (where == 'cache') {
-                // This line is cache line
-                var filename = line.split('?')[0];
-                filename = (filename == '/')?'index.html':filename;
-                // Adds task to queue...
-                saveFileFromServer(filename, line);
-              } else
-              if (where == 'fallback') {
-                // This line is a fallback line
-                //console.log('Fallback: ' + line);
-                // TODO: Figure out a way to parse this... Filenames should be url
-                // Encoded? - watchout for spaces in filenames...
-                //saveFileFromServer(filename, line);
-              }
-            }
+        // Clean the app folder after rebuilding?
+        queue.add(fsx.cleanFolder);
 
-            // Correct the file names in the index.html
-            queue.add(correctIndexHtml);
-
-            // Save the manifest file
-            queue.add(function(complete) {
-              //console.log('write manifest');
-              // Increase version nr in configuration
-              manifest.manifest_version++;
-              //manifest.version++;
-              // Save new manifest
-              manifestString = JSON.stringify(manifest, null, '\t');
-              fs.writeFileSync('manifest.json', manifestString, 'utf8');
-              complete();
-            });
-
-            // Clean the app folder after rebuilding?
-            queue.add(cleanFolder);
-
-            // If user wants to reload chrome app or at first run
-            if (program.reload || currentBuild === 1) {
-              if (program.target === 'cordova') {
-                // Cordova
-                queue.add(testCordovaPlatform);
-                queue.add(prepareCordovaApps);
-                queue.add(compileCordovaApps);
-              } else {
-                // Default target is packaged
-                //queue.add(killChrome);
-                // We are reloading but only do this the first time
-                if (currentBuild === 1) {
-                  queue.add(reloadChromeApps);
-                }
-              }
-            }
-
-            if (program.target === 'cordova' && program.emulate) {
-              queue.add(emulateCordovaApps);
-            }
-
-            if (program.target === 'cordova' && program.device) {
-              queue.add(runCordovaApps);
-            }
-
-            // Start the build
-            queue.run();
-            
+        // If user wants to reload chrome app or at first run
+        if (program.reload || currentBuild === 1) {
+          if (program.target === 'cordova') {
+            // Cordova
+            queue.add(testCordovaPlatform);
+            queue.add(prepareCordovaApps);
+            queue.add(compileCordovaApps);
           } else {
-            console.log(' Add the appcache package'.red);
+            // Default target is packaged
+            //queue.add(killChrome);
+            // We are reloading but only do this the first time
+            if (currentBuild === 1) {
+              queue.add(reloadChromeApps);
+            }
           }
-        });
-      });
+        }
 
-      req.on('error', function(e) {
-        console.log('problem with request: ' + e.message);
-      });
+        if (program.target === 'cordova' && program.emulate) {
+          queue.add(emulateCordovaApps);
+        }
 
-      req.end();
+        if (program.target === 'cordova' && program.device) {
+          queue.add(runCordovaApps);
+        }
+
+        // Start the build
+        queue.run();
+
+      });
 
     };
 
