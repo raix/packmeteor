@@ -71,6 +71,16 @@ if (program.device === true) {
 // Check that we are in a packaged app directory
 var inPackagedAppFolder = fs.existsSync('manifest.json');
 var inCordovaAppFolder = fs.existsSync('config.xml');
+var inNewCordovaOutSideWWW = fs.existsSync('www');
+
+if (inNewCordovaOutSideWWW) {
+  console.log('Cordova found - but you have to be inside the www folder');
+  process.exit();
+}
+
+// We could be in the new cordova structure so better test...
+if (!inCordovaAppFolder)
+  inCordovaAppFolder = fs.existsSync(path.resolve('../config.xml'));
 
 if (!program.target) {
   // If target not set then detect packaged or cordova
