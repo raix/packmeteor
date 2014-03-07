@@ -12,13 +12,24 @@ This is a simple CLI for packaging the Meteor client into a folder. Its useful w
 $ npm install packmeteor
 ```
 
+###Meteor
 Rig a Meteor app on `localhost:3000` and install the `packmeteor` package
 
+####Client-side
+There are at the moment only two, but common helpers on the client-side api.
+`Packmeteor.cordova.isReady()` - reactive status of the cordova
+`Packmeteor.chrome.isReady()` - not reactive but useful testing for chrome packaged apps.
+
+####Server-side
+`Packmeteor.addFile(url)` - can add local files, mainly used if a cordova plugin needs to be added manually.
+
+
+###Chrome packaged apps
 Create packaged app folder:
 ```
 $ packmeteor -c hello
 ```
-###Chrome packaged apps
+
 Autobuild and reload Chrome Packaged App on Meteor hotcode push:
 ```
 $ cd hello
@@ -31,7 +42,7 @@ Autobuild Cordova:
 ```
 packmeteor -ae
 ```
-*This will autopackage and update android emulator*
+*This will autopackage and update android emulator, run packmeteor from the `www` folder in cordova*
 
 ###Directly from filesystem
 Run the packaged client app without server:
