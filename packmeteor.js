@@ -36,6 +36,10 @@ var currentBuild = 0;
 var queue = new Queue();
 // List of replacements for correcting index.html
 var fileList = [];
+// Add local files before / after the main file list
+var beforeFileList = [];
+var afterFileList = [];
+
 // Name of reloader script
 var reloaderFile = 'chrome.meteor.reloader.js';
 // Path of this script - Used by creating app from templates
@@ -280,9 +284,14 @@ var correctIndexHtml = function(complete) {
         '  <meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, height=device-height, target-densitydpi=device-dpi" />\n\n'
       );
 
-
+// TODO: beforeFileList
       // TODO: Check if we should add more files like plugins
       text += '  <script type="text/javascript" src="cordova.js"></script>\n';
+
+      // Add after files
+      for (var i = 0; i < afterFileList.length; i++) {
+        text += '  <script type="text/javascript" src="' + afterFileList[i].url + '"></script>\n';
+      }
     }
     // Add the rest of html
     text += '  <script type="text/javascript" src="index.js"></script>';
@@ -432,7 +441,11 @@ if (program.create) {
       // TODO: if we make a Meteor package we should have a better interface
       // than using the appcache?
 
-      filemanifest(urls.build.hostname, urls.build.port, function(filelist) {
+      filemanifest(urls.build.hostname, urls.build.port, function(result) {
+        var filelist = result.files;
+        // TODO: Handle before and after local files could be plugins
+        beforeFileList = result.before;
+        afterFileList = result.after;
 
         for (var i = 0; i < filelist.length; i++) {
           // Adds task to queue...

@@ -12,7 +12,7 @@ This is a simple CLI for packaging the Meteor client into a folder. Its useful w
 $ npm install packmeteor
 ```
 
-Rig a Meteor app on `localhost:3000` and install the `appcache` package
+Rig a Meteor app on `localhost:3000` and install the `packmeteor` package
 
 Create packaged app folder:
 ```

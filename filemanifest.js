@@ -3,7 +3,7 @@
 // HTTP
 var http = require('http');
 
-module.exports = function(host, port, callback) {
+var appcacheManifest = function(host, port, callback) {
   var options = {
     hostname: host,
     port: port,
@@ -59,7 +59,7 @@ module.exports = function(host, port, callback) {
           }
         }
         // Send the file list to callback
-        callback(filelist);
+        callback({ files: filelist, before:{}, after: {} });
         
       } else {
         console.log(' Add the appcache package'.red);
@@ -75,5 +75,78 @@ module.exports = function(host, port, callback) {
 
 };
 
+var packmeteorManifest = function(host, port, callback) {
+  var options = {
+    hostname: host,
+    port: port,
+    path: '/packmeteor.manifest',
+    method: 'GET'
+  };
+
+  var req = http.request(options, function(res) {
+    var body = '';
+    var filelist = [];
+
+    res.setEncoding('utf8');
+    res.on('data', function (chunk) {
+      body += chunk;
+    });
+    res.on('end', function () {
+      // Make sure we got the app.manifest
+      if (body.length) {
+        var lines = body.split('\n');
+        if (lines[0] !== '#PACKMETEOR') {
+          console.log('Incompatible packmeteor.manifest format');
+          process.exit();
+        }
+
+        var result = {
+          files: [],
+          before: [],
+          after: []
+        };
+        var where = 'files';
+
+        for (var i = 1; i < lines.length; i++) {
+          var line = lines[i];
+          if (line.length) {
+
+            if (line == '#BEFORE') {
+              where = 'before';
+            } else if (line == '#AFTER') {
+              where = 'after';
+            } else {            
+              // Adds task to queue...
+              result[where].push({
+                name: (line == '/')?'index.html':line,
+                url: line
+              });
+              //saveFileFromServer(filename, line);
+            }
+            
+          }
+        }
+
+        // console.log(filelist);
+        // Send the file list to callback
+        callback(result); // TODO add before after files...They are local
+        // files - so they should not be downloaded
+        
+      } else {
+        console.log(' Add the packmeteor package'.red);
+      }
+    });
+  });
+
+  req.on('error', function(e) {
+    console.log('problem with request: ' + e.message);
+  });
+
+  req.end();
+
+};
 
 
+
+//module.exports = appcacheManifest;
+module.exports = packmeteorManifest;
