@@ -24,3 +24,11 @@ document.addEventListener("deviceready", function() {
   deviceReady = true;
   deviceReadyDeps.changed();
 }, false);
+
+// This package will stop Migration
+if (typeof Reload !== 'undefined') {
+  Reload._onMigrate('Packmeteor', function() {
+    // Nope we will not allow reload
+    return false;
+  });
+}
