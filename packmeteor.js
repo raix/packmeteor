@@ -261,7 +261,8 @@ var correctIndexHtml = function(complete) {
     // Adapt to latest meteor ' instead of "
     text = text.replace("'text/javascript'", '"text/javascript"');
     // Divide the source
-    var listA = text.split('\n<script type="text/javascript">');
+    text = text.replace('\n<script type="text/javascript">', '<!-- SCRIPT -->');
+    var listA = text.split('<!-- SCRIPT -->');
     // Check for parsing errors
     if (listA.length !== 2) {
       console.log(text);
