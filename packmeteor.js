@@ -278,12 +278,13 @@ var correctIndexHtml = function(complete) {
     text = listA[0];
     // If building for cordova then add the cordova script
     if (program.target === 'cordova') {
-      text = text.replace('<head>\n',
-        '<head>\n' +
-        '  <meta charset="utf-8" />\n' +
-        '  <meta name="format-detection" content="telephone=no" />\n' +
-        '  <meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, height=device-height, target-densitydpi=device-dpi" />\n\n'
-      );
+      // XXX: dont mess with headers
+      // text = text.replace('<head>\n',
+      //   '<head>\n' +
+      //   '  <meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>\n' +
+      //   '  <meta name="format-detection" content="telephone=no" />\n' +
+      //   '  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0, minimum-scale=1.0, maximum-scale=1.0">\n\n'
+      // );
 
 // TODO: beforeFileList
       // TODO: Check if we should add more files like plugins
