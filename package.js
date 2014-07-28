@@ -1,4 +1,5 @@
 Package.describe({
+  version: '0.1.2',
   summary: "Rig the basics for packmeteor"
 });
 
