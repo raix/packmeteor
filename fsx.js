@@ -133,8 +133,13 @@ var saveRemoteFile = function(filepath, urlpath, complete) {
 
       fd = fs.openSync(filepath, 'w');
       response.on("data", function(chunk) {
-        loadedLength += chunk.length;   
-        fs.writeSync(fd, chunk, 0, chunk.length, null); 
+        loadedLength += chunk.length;
+        try {
+          fs.writeSync(fd, chunk, 0, chunk.length, null); 
+        } 
+        catch(err) {
+          complete('Error while downloading: ' + urlpath + ', Error: ' + err.message);
+        }
        });
       
       response.on("end", function() {
