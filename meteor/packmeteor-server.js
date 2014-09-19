@@ -28,7 +28,7 @@ WebApp.connectHandlers.use(function(req, res, next) {
 
   manifest += '/' + '\n';
 
-  _.each(WebApp.clientProgram.manifest, function (resource) {
+  _.each(WebApp.clientPrograms['web.browser'].manifest, function (resource) {
     if (resource.where === 'client') {
 
       var url = resource.url.split('?')[0];
