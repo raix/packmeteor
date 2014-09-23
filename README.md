@@ -63,7 +63,7 @@ $ packmeteor --help
     -c, --create <name>               Create Packaged App
     -a, --autobuild                   Auto build on server update
     -r, --reload                      Reload app
-    -b, --build [url]                 Client code url [http://localhost:3000]
+    -u, --url [url]                   Client code url [http://localhost:3000]
     -s, --server <url>                Server url, default to build url [http://localhost:3000]
     -t, --target [packaged, cordova]  Target platform, default is autodetect
     -e, --emulate [platform]          Reload emulator [android]
